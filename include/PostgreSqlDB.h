@@ -25,8 +25,6 @@
 #include "SqlDB.h"
 #include "ObjectSQL.h"
 
-using namespace std;
-
 #ifdef POSTGRESQL_DB
 
 #include <libpq-fe.h>
@@ -46,7 +44,7 @@ public:
         int           _connections);
 
     ~PostgreSqlDB();
-    
+
     /**
      *  This function returns a legal SQL string that can be used in an SQL
      *  statement.
@@ -82,12 +80,16 @@ public:
      */
     bool fts_available() override;
 
+    /**
+     *  Sets the LIMIT clause for the database engine
+     */
     std::string get_limit_string(const std::string& str) override;
+
 protected:
     int exec_ext(std::ostringstream& cmd, Callbackable *obj, bool quiet) override;
 
 private:
-    
+
     /**
      *  Number of concurrent DB connections.
      */
@@ -116,7 +118,7 @@ private:
      *  Fine-grain mutex for DB access (pool of DB connections)
      */
     pthread_mutex_t mutex;
-    
+
     /**
      *  Conditional variable to wake-up waiting threads.
      */
@@ -131,38 +133,31 @@ private:
      *  Returns the connection to the pool.
      */
     void free_db_connection(PGconn * db);
-    
+
     /**
      *  Preprocesses the query to be compatible with PostgreSQL syntax
-     * 
-     *  Any change to this method should be reflected in BackEndPostgreSQL class 
+     *
+     *  Any change to this method should be reflected in BackEndPostgreSQL class
      *  in src/onedb/onedb_backend.rb
-     */
-    void preprocess_query(std::ostringstream& cmd);
-
-    /**
-     *  Replaces incompatible data types in the query
-     */
-    void replace_types(std::string& cmd, size_t start_pos);
-
-    /**
-     *  Replaces substring s1 in string cmd with string s2
-     */
-    void replace_substring(std::string& cmd, const std::string& s1, const std::string& s2);
-    
-    /**
-     * This method changes MySQL/SQLite REPLACE INTO into PostgreSQL
-     * INSERT INTO query with ON CONFLICT clause. 
-     * For example:
-     *   REPLACE INTO pool_control (tablename, last_oid) VALUES ('acl',0)
-     * changes to: 
-     *  INSERT INTO pool_control (tablename, last_oid) VALUES ('acl',0) 
-     *      ON CONFLICT (tablename) DO UPDATE SET last_oid = EXCLUDED.last_oid"
-     * 
-     *  Any change to this method should be reflected in BackEndPostgreSQL class 
+     *
+     *  This method alters to queries:
+     *    - CREATE TABLE to adjust type names
+     *      . MEDIUMTEXT -> TEXT
+     *      . LONGTEXT -> TEXT
+     *      . BIGINT UNSIGNED -> NUMERIC
+     *
+     *    - REPLACE INTO into PostgreSQL INSERT INTO query with ON CONFLICT
+     *    clause. For example:
+     *       REPLACE INTO pool_control (tablename, last_oid) VALUES ('acl',0)
+     *    changes to:
+     *       INSERT INTO pool_control (tablename, last_oid) VALUES ('acl',0)
+     *          ON CONFLICT (tablename) DO UPDATE SET last_oid = EXCLUDED.last_oid
+     ***************************************************************************
+     *  Any change to this method should be reflected in BackEndPostgreSQL class
      *  in src/onedb/onedb_backend.rb
+     ***************************************************************************
      */
-    void replace_replace_into(std::string& cmd);
+    static void preprocess_query(std::ostringstream& cmd);
 };
 #else
 // Class stub

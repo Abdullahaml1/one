@@ -34,3 +34,10 @@ if env['postgresql']=='yes':
 
 # Build library
 env.StaticLibrary(lib_name, source_files)
+
+lib_name = 'nebula_sql_const'
+
+source_files = ['OneDB.cc']
+
+# Build library
+env.StaticLibrary(lib_name, source_files)

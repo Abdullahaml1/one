@@ -409,12 +409,6 @@ void Nebula::start(bool bootstrap_only)
         }
         else if ( db_backend_type == "postgresql" )
         {
-            // Default to port 5432
-            if ( port == 0 )
-            {
-                port = 5432;
-            }
-
             db_backend = new PostgreSqlDB(server, port, user, passwd, db_name,
                     connections);
         }
@@ -603,16 +597,12 @@ void Nebula::start(bool bootstrap_only)
     MadManager::mad_manager_system_init();
 
     time_t timer_period;
-    time_t monitor_interval_host;
     time_t monitor_interval_datastore;
     time_t monitor_interval_market;
-    time_t monitor_interval_vm;
 
     nebula_configuration->get("MANAGER_TIMER", timer_period);
-    nebula_configuration->get("MONITORING_INTERVAL_HOST", monitor_interval_host);
     nebula_configuration->get("MONITORING_INTERVAL_DATASTORE", monitor_interval_datastore);
     nebula_configuration->get("MONITORING_INTERVAL_MARKET", monitor_interval_market);
-    nebula_configuration->get("MONITORING_INTERVAL_VM", monitor_interval_vm);
 
     // ---- ACL Manager ----
     try
@@ -648,7 +638,6 @@ void Nebula::start(bool bootstrap_only)
         vector<const SingleAttribute *> vm_restricted_attrs;
         vector<const SingleAttribute *> vm_encrypted_attrs;
 
-        time_t vm_expiration;
         bool   vm_submit_on_hold;
 
         float cpu_cost;
@@ -660,8 +649,6 @@ void Nebula::start(bool bootstrap_only)
         nebula_configuration->get("VM_RESTRICTED_ATTR", vm_restricted_attrs);
 
         nebula_configuration->get("VM_ENCRYPTED_ATTR", vm_encrypted_attrs);
-
-        nebula_configuration->get("VM_MONITORING_EXPIRATION_TIME",vm_expiration);
 
         nebula_configuration->get("VM_SUBMIT_ON_HOLD",vm_submit_on_hold);
 
@@ -683,18 +670,14 @@ void Nebula::start(bool bootstrap_only)
         }
 
         vmpool = new VirtualMachinePool(logdb, vm_restricted_attrs, vm_encrypted_attrs,
-                vm_expiration, vm_submit_on_hold, cpu_cost, mem_cost, disk_cost);
+                vm_submit_on_hold, cpu_cost, mem_cost, disk_cost);
 
         /* ---------------------------- Host Pool --------------------------- */
         vector<const SingleAttribute *> host_encrypted_attrs;
 
-        time_t host_exp;
-
-        nebula_configuration->get("HOST_MONITORING_EXPIRATION_TIME", host_exp);
-
         nebula_configuration->get("HOST_ENCRYPTED_ATTR", host_encrypted_attrs);
 
-        hpool  = new HostPool(logdb, host_exp, host_encrypted_attrs);
+        hpool  = new HostPool(logdb, host_encrypted_attrs);
 
         /* --------------------- VirtualRouter Pool ------------------------- */
         vrouterpool = new VirtualRouterPool(logdb);
@@ -904,18 +887,12 @@ void Nebula::start(bool bootstrap_only)
             vector<const VectorAttribute *> vmm_mads;
             int    vm_limit;
 
-            bool   do_poll;
-
             nebula_configuration->get("VM_PER_INTERVAL", vm_limit);
 
             nebula_configuration->get("VM_MAD", vmm_mads);
 
-            nebula_configuration->get("VM_INDIVIDUAL_MONITORING", do_poll);
-
             vmm = new VirtualMachineManager(
                 timer_period,
-                monitor_interval_vm,
-                do_poll,
                 vm_limit,
                 vmm_mads);
         }
@@ -955,31 +932,18 @@ void Nebula::start(bool bootstrap_only)
     // ---- Information Manager ----
     if (!cache)
     {
-        try
+        vector<const VectorAttribute *> im_mads;
+
+        int host_limit;
+
+        nebula_configuration->get("HOST_PER_INTERVAL", host_limit);
+        nebula_configuration->get("IM_MAD", im_mads);
+
+        im = new InformationManager(hpool, vmpool, timer_period, mad_location);
+
+        if (im->load_drivers(im_mads) != 0)
         {
-            vector<const VectorAttribute *> im_mads;
-
-            int host_limit;
-            int monitor_threads;
-
-            nebula_configuration->get("HOST_PER_INTERVAL", host_limit);
-
-            nebula_configuration->get("MONITORING_THREADS", monitor_threads);
-
-            nebula_configuration->get("IM_MAD", im_mads);
-
-            im = new InformationManager(hpool,
-                                        clpool,
-                                        timer_period,
-                                        monitor_interval_host,
-                                        host_limit,
-                                        monitor_threads,
-                                        remotes_location,
-                                        im_mads);
-        }
-        catch (bad_alloc&)
-        {
-            throw;
+            goto error_mad;
         }
 
         rc = im->start();
@@ -1160,11 +1124,6 @@ void Nebula::start(bool bootstrap_only)
             goto error_mad;
         }
 
-        if (im->load_mads(0) != 0)
-        {
-            goto error_mad;
-        }
-
         if (tm->load_mads(0) != 0)
         {
             goto error_mad;
@@ -1298,7 +1257,7 @@ void Nebula::start(bool bootstrap_only)
         pthread_join(tm->get_thread_id(),0);
         pthread_join(dm->get_thread_id(),0);
 
-        pthread_join(im->get_thread_id(),0);
+        im->join_thread();
         pthread_join(hm->get_thread_id(),0);
         pthread_join(imagem->get_thread_id(),0);
         pthread_join(marketm->get_thread_id(),0);

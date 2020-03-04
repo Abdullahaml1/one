@@ -26,6 +26,9 @@
  * Doc: https://www.postgresql.org/docs/current/libpq.html
  ********/
 
+#define PG_DEFAULT_PORT 5432
+
+/* -------------------------------------------------------------------------- */
 /* -------------------------------------------------------------------------- */
 
 PostgreSqlDB::PostgreSqlDB(
@@ -39,18 +42,24 @@ PostgreSqlDB::PostgreSqlDB(
     PGconn* conn;
 
     server = _server;
-    port = _port;
-    user = _user;
+    port   = _port;
+    user   = _user;
+
     password = _password;
     database = _database;
+
+    if ( port == 0 )
+    {
+        port = PG_DEFAULT_PORT;
+    }
 
     max_connections = _connections;
 
     // Set up connection parameters
     string params = "host=" + _server
-                  + " port=" + to_string(port) 
-                  + " user=" + user 
-                  + " password=" + password 
+                  + " port=" + to_string(port)
+                  + " user=" + user
+                  + " password=" + password
                   + " dbname=" + database;
 
     // Create connection pool
@@ -63,7 +72,7 @@ PostgreSqlDB::PostgreSqlDB(
             ostringstream oss;
             oss << "Could not open connect to database server: "
                 << PQerrorMessage(conn);
-        
+
             throw runtime_error(oss.str());
         }
 
@@ -75,14 +84,18 @@ PostgreSqlDB::PostgreSqlDB(
     if ( PQserverVersion(db_escape_connect) < 90500 )
     {
         std::string error = "PostgreSQL version error: must be 9.5 or higher.";
+
         NebulaLog::log("ONE", Log::ERROR, error);
+
         throw runtime_error(error);
     }
 
     pthread_mutex_init(&mutex, 0);
+
     pthread_cond_init(&cond, 0);
 }
 
+/* -------------------------------------------------------------------------- */
 /* -------------------------------------------------------------------------- */
 
 PostgreSqlDB::~PostgreSqlDB()
@@ -102,15 +115,16 @@ PostgreSqlDB::~PostgreSqlDB()
 }
 
 /* -------------------------------------------------------------------------- */
+/* -------------------------------------------------------------------------- */
 
 char * PostgreSqlDB::escape_str(const string& str)
 {
     char* buf = new char[str.size() * 2 + 1];
-    int error;
+    int err;
 
-    PQescapeStringConn(db_escape_connect, buf, str.c_str(), str.length(), &error);
+    PQescapeStringConn(db_escape_connect, buf, str.c_str(), str.length(), &err);
 
-    if ( error != 0 )
+    if ( err != 0 )
     {
         delete[] buf;
 
@@ -161,7 +175,9 @@ std::string PostgreSqlDB::get_limit_string(const std::string& str)
     // to LIMIT m OFFSET n, even if n is missing, or n is 0.
 
     std::string result = str;
+
     size_t pos;
+
     if ( (pos = result.find(',')) != std::string::npos )
     {
         result.replace(pos, 1, " OFFSET ");
@@ -172,25 +188,26 @@ std::string PostgreSqlDB::get_limit_string(const std::string& str)
 }
 
 /* -------------------------------------------------------------------------- */
+/* -------------------------------------------------------------------------- */
 
 int PostgreSqlDB::exec_ext(std::ostringstream& cmd, Callbackable *obj, bool quiet)
 {
-    preprocess_query(cmd);
+    string str = preprocess_query(cmd);
 
-    string str = cmd.str();
     const char* c_str = str.c_str();
 
     Log::MessageType error_type = quiet ? Log::DDEBUG : Log::ERROR;
 
-    int ec = SqlDB::SUCCESS;
 
-    PGconn* conn = get_db_connection();
+    PGconn* conn  = get_db_connection();
+
     PGresult* res = PQexec(conn, c_str);
 
-    if ( PQresultStatus(res) != PGRES_COMMAND_OK && PQresultStatus(res) != PGRES_TUPLES_OK )
+    if ( PQresultStatus(res) != PGRES_COMMAND_OK &&
+         PQresultStatus(res) != PGRES_TUPLES_OK )
     {
         const char* err_msg = PQerrorMessage(conn);
-        
+
         ostringstream oss;
         oss << "SQL command was: " << c_str;
         oss << ", error " << err_msg;
@@ -200,53 +217,60 @@ int PostgreSqlDB::exec_ext(std::ostringstream& cmd, Callbackable *obj, bool quie
         PQclear(res);
         free_db_connection(conn);
 
-        ec = SqlDB::SQL;
-        return ec;
+        return SqlDB::SQL;
     }
 
-    // Get number of fields and rows of the result
-    int n_fields = PQnfields(res);
-    int n_rows = PQntuples(res);
-    
-    char** names = new char*[n_fields];
-    char** values = new char*[n_fields];
-            
-    if ( obj != 0 )
+    if ( obj == 0 )
     {
-        if ( obj->isCallBackSet() && PQresultStatus(res) == PGRES_TUPLES_OK )
-        {
-            // Get column names
-            for (int i = 0; i < n_fields; i++)
-            {
-                names[i] = PQfname(res, i);
-            }
+        // Free the result and db connection
+        PQclear(res);
+        free_db_connection(conn);
 
-            // For each row
-            for (int row = 0; row < n_rows; row++)
-            {
-                // get values in that row
-                for (int field = 0; field < n_fields; field++)
-                {
-                    values[field] = PQgetvalue(res, row, field);
-                }
-
-                // and do a callback on them
-                if ( obj->do_callback(n_fields, values, names) != 0 )
-                {
-                    ec = SqlDB::SQL;
-                    break;
-                }
-            }
-        }
-    
-        if ( obj->get_affected_rows() == 0 && n_rows )
-        {
-            obj->set_affected_rows(n_rows);
-        }
+        return SqlDB::SUCCESS;
     }
 
-    delete[] names;
-    delete[] values;
+    int ec = SqlDB::SUCCESS;
+
+    if ( obj->isCallBackSet() && PQresultStatus(res) == PGRES_TUPLES_OK )
+    {
+        // Get number of fields and rows of the result
+        int n_fields = PQnfields(res);
+        int n_rows   = PQntuples(res);
+
+        char** names  = new char*[n_fields];
+        char** values = new char*[n_fields];
+
+        // Get column names
+        for (int i = 0; i < n_fields; i++)
+        {
+            names[i] = PQfname(res, i);
+        }
+
+        // For each row
+        for (int row = 0; row < n_rows; row++)
+        {
+            // get values in that row
+            for (int field = 0; field < n_fields; field++)
+            {
+                values[field] = PQgetvalue(res, row, field);
+            }
+
+            // and do a callback on them
+            if ( obj->do_callback(n_fields, values, names) != 0 )
+            {
+                ec = SqlDB::SQL;
+                break;
+            }
+        }
+
+        delete[] names;
+        delete[] values;
+    }
+
+    if ( obj->get_affected_rows() == 0 && n_rows )
+    {
+        obj->set_affected_rows(n_rows);
+    }
 
     // Free the result and db connection
     PQclear(res);
@@ -255,6 +279,7 @@ int PostgreSqlDB::exec_ext(std::ostringstream& cmd, Callbackable *obj, bool quie
     return ec;
 }
 
+/* -------------------------------------------------------------------------- */
 /* -------------------------------------------------------------------------- */
 
 PGconn * PostgreSqlDB::get_db_connection()
@@ -290,8 +315,22 @@ void PostgreSqlDB::free_db_connection(PGconn * db)
 }
 
 /* -------------------------------------------------------------------------- */
+/* -------------------------------------------------------------------------- */
 
-void PostgreSqlDB::preprocess_query(std::ostringstream& cmd)
+static void replace_substring(std::string& cmd, const std::string& s1,
+        const std::string& s2)
+{
+    size_t pos = cmd.find(s1);
+
+    while (pos != std::string::npos)
+    {
+        cmd.replace(pos, s1.length(), s2);
+
+        pos = cmd.find(s1, pos + s2.length());
+    }
+}
+
+std::string PostgreSqlDB::preprocess_query(std::ostringstream& cmd)
 {
     std::string query = cmd.str();
     size_t pos;
@@ -300,61 +339,33 @@ void PostgreSqlDB::preprocess_query(std::ostringstream& cmd)
     // so we don't change user data
     if ((pos = query.find("CREATE TABLE")) == 0)
     {
-        replace_types(query, pos);
-        cmd.str(query);
-        return;
+        replace_substring(query, "MEDIUMTEXT", "TEXT");
+        replace_substring(query, "LONGTEXT", "TEXT");
+        replace_substring(query, "BIGINT UNSIGNED", "NUMERIC(20)");
     }
-
-    if ((pos = query.find("REPLACE")) == 0)
+    else if ((pos = query.find("REPLACE")) == 0)
     {
-        replace_replace_into(query);
+        query.replace(0, 7, "INSERT");
+
+        size_t names_start = query.find("(") + 1;
+        size_t names_end   = query.find(")", names_start);
+
+        std::string db_names = query.substr(names_start, names_end - names_start);
+
+        std::vector<std::string> splits;
+        one_util::split(db_names, ',', splits);
+
+        query += " ON CONFLICT (" + splits[0] + ") DO UPDATE SET ";
+
+        const char* sep = "";
+
+        for (size_t i = 1; i < splits.size(); i++)
+        {
+            query += sep + splits[i] + " = EXCLUDED." + splits[i];
+            sep = ", ";
+        }
     }
-    
-    cmd.str(query);
+
+    return query;
 }
 
-/* -------------------------------------------------------------------------- */
-
-void PostgreSqlDB::replace_types(std::string& cmd, size_t start_pos)
-{
-    replace_substring(cmd, "MEDIUMTEXT", "TEXT");
-    replace_substring(cmd, "LONGTEXT", "TEXT");
-    replace_substring(cmd, "BIGINT UNSIGNED", "NUMERIC(20)");
-}
-
-/* -------------------------------------------------------------------------- */
-
-void PostgreSqlDB::replace_substring(std::string& cmd, const std::string& s1, const std::string& s2)
-{
-    size_t pos = cmd.find(s1);
-    while (pos != std::string::npos)
-    {
-        cmd.replace(pos, s1.length(), s2);
-        
-        pos = cmd.find(s1, pos + s2.length());
-    }
-}
-
-/* -------------------------------------------------------------------------- */
-
-void PostgreSqlDB::replace_replace_into(std::string& cmd)
-{
-    size_t pos = 0;
-    
-    cmd.replace(pos, 7, "INSERT");
-
-    size_t db_names_start = cmd.find("(", pos) + 1;
-    size_t db_names_end = cmd.find(")", db_names_start);
-    std::string db_names = cmd.substr(db_names_start, db_names_end - db_names_start);
-
-    std::vector<std::string> splits;
-    one_util::split(db_names, ',', splits);
-    
-    cmd += " ON CONFLICT (" + splits[0] + ") DO UPDATE SET ";
-    const char* sep = "";
-    for (size_t i = 1; i < splits.size(); i++)
-    {
-        cmd += sep + splits[i] + " = EXCLUDED." + splits[i];
-        sep = ", ";
-    }
-}

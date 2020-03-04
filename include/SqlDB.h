@@ -120,7 +120,6 @@ public:
      */
     virtual bool fts_available() = 0;
 
-
     /**
      *  @return pointer to a non-federated version of this database
      */
@@ -132,7 +131,10 @@ public:
     /**
      *  @return string with compatible LIMIT clause syntax
      */
-    virtual std::string get_limit_string(const std::string& str) = 0;
+    virtual std::string get_limit_string(const std::string& str)
+    {
+        return str;
+    }
 
 protected:
     /**

@@ -83,11 +83,6 @@ public:
     {
         return false;
     }
-    
-    std::string get_limit_string(const std::string& str) override
-    {
-        return str;
-    }
 
 protected:
     /**

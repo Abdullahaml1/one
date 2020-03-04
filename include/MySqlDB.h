@@ -90,11 +90,6 @@ public:
      */
      bool fts_available();
 
-    /**
-     *  Returns string with compatible LIMIT syntax
-     */
-    std::string get_limit_string(const std::string& str);
-
 protected:
     /**
      *  Wraps the mysql_query function call
@@ -191,8 +186,6 @@ public:
     bool limit_support(){return true;};
 
     bool fts_available(){return false;};
-
-    std::string get_limit_string(const std::string& str){return str;}
 
 protected:
     int exec_ext(std::ostringstream& cmd, Callbackable *obj, bool quiet){return -1;};
