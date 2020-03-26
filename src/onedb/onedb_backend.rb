@@ -391,6 +391,18 @@ class BackEndMySQL < OneDBBacKEnd
         end
     end
 
+    def create_idx(version = nil)
+        type = :index_sql
+
+        type = :index_sqlite unless @db.server_version >= 50600
+
+        schema = get_schema(type, version)
+
+        schema.each do |idx|
+            @db.run idx
+        end
+    end
+
     private
 
     def connect_db
@@ -517,6 +529,16 @@ class BackEndSQLite < OneDBBacKEnd
 
         system("sqlite3 #{@sqlite_file} < #{bck_file}")
         puts "Sqlite database backup restored in #{@sqlite_file}"
+    end
+
+    def create_idx(version = nil)
+        type = :index_sqlite
+
+        schema = get_schema(type, version)
+
+        schema.each do |idx|
+            @db.run idx
+        end
     end
 
     private
