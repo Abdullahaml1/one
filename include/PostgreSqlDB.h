@@ -59,31 +59,22 @@ public:
      */
     void free_str(char * str) override;
 
-    /**
-     * Returns true if the syntax INSERT VALUES (data), (data), (data)
-     * is supported
-     *
-     * @return true if supported
-     */
-    bool multiple_values_support() override;
 
-    /**
-     * Returns true if this Database can use LIMIT in queries with DELETE
-     *  and UPDATE
-     *
-     * @return true if supported
-     */
-    bool limit_support() override;
+    std::string limit_string(int sid, int eid) override
+    {
+        std::ostringstream oss;
+        oss << "LIMIT " << sid << " OFFSET " << eid;
 
-    /**
-     *  Return true if the backend allows FTS index
-     */
-    bool fts_available() override;
+        return oss.str();
+    }
 
-    /**
-     *  Sets the LIMIT clause for the database engine
-     */
-    std::string get_limit_string(const std::string& str) override;
+    std::string limit_string(int sid) override
+    {
+        std::ostringstream oss;
+        oss << "LIMIT " << sid << " OFFSET 0";
+
+        return oss.str();
+    }
 
 protected:
     int exec_ext(std::ostringstream& cmd, Callbackable *obj, bool quiet) override;
@@ -157,7 +148,7 @@ private:
      *  in src/onedb/onedb_backend.rb
      ***************************************************************************
      */
-    static void preprocess_query(std::ostringstream& cmd);
+    static std::string preprocess_query(std::ostringstream& cmd);
 };
 #else
 // Class stub
@@ -180,15 +171,12 @@ public:
 
     void free_str(char * str) override {};
 
-    bool multiple_values_support() override {return true;};
+    std::string limit_string(int sid, int eid) override {return "";}
 
-    bool limit_support() override {return true;};
-
-    bool fts_available() override {return false;};
-
-    std::string get_limit_string(const std::string& str) override {return str;}
 protected:
-    int exec_ext(std::ostringstream& cmd, Callbackable *obj, bool quiet) override {return -1;};
+    int exec_ext(std::ostringstream& c, Callbackable *o, bool q) override {
+        return -1;
+    };
 };
 #endif
 

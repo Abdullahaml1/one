@@ -389,7 +389,7 @@ void Nebula::start(bool bootstrap_only)
 
             if (_db->vector_value("CONNECTIONS", connections) == -1)
             {
-                connections = 50;
+                connections = 25;
             }
 
             if (_db->vector_value("ENCODING", encoding) == -1)

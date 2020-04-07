@@ -17,7 +17,6 @@
 #include "NebulaUtil.h"
 #include "PostgreSqlDB.h"
 
-#include "PostgreSqlDB.h"
 #include <libpq-fe.h>
 
 #include <iostream>
@@ -90,6 +89,12 @@ PostgreSqlDB::PostgreSqlDB(
         throw runtime_error(error);
     }
 
+    features = {
+        {SqlFeature::MULTIPLE_VALUE, PQlibVersion() < 80200},
+        {SqlFeature::LIMIT, false},
+        {SqlFeature::FTS, false}
+    };
+
     pthread_mutex_init(&mutex, 0);
 
     pthread_cond_init(&cond, 0);
@@ -142,52 +147,6 @@ void PostgreSqlDB::free_str(char * str)
 }
 
 /* -------------------------------------------------------------------------- */
-
-bool PostgreSqlDB::multiple_values_support()
-{
-    if ( PQlibVersion() < 80200 )
-    {
-        return false;
-    }
-
-    return true;
-}
-
-/* -------------------------------------------------------------------------- */
-
-bool PostgreSqlDB::limit_support()
-{
-    return false;
-}
-
-/* -------------------------------------------------------------------------- */
-
-bool PostgreSqlDB::fts_available()
-{
-    return false;
-}
-
-/* -------------------------------------------------------------------------- */
-
-std::string PostgreSqlDB::get_limit_string(const std::string& str)
-{
-    // LIMIT m,n syntax is not supported in PostgreSQL so it needs to be changed
-    // to LIMIT m OFFSET n, even if n is missing, or n is 0.
-
-    std::string result = str;
-
-    size_t pos;
-
-    if ( (pos = result.find(',')) != std::string::npos )
-    {
-        result.replace(pos, 1, " OFFSET ");
-        return result;
-    }
-
-    return result + " OFFSET 0";
-}
-
-/* -------------------------------------------------------------------------- */
 /* -------------------------------------------------------------------------- */
 
 int PostgreSqlDB::exec_ext(std::ostringstream& cmd, Callbackable *obj, bool quiet)
@@ -231,12 +190,12 @@ int PostgreSqlDB::exec_ext(std::ostringstream& cmd, Callbackable *obj, bool quie
 
     int ec = SqlDB::SUCCESS;
 
+    // Get number of fields and rows of the result
+    int n_fields = PQnfields(res);
+    int n_rows   = PQntuples(res);
+
     if ( obj->isCallBackSet() && PQresultStatus(res) == PGRES_TUPLES_OK )
     {
-        // Get number of fields and rows of the result
-        int n_fields = PQnfields(res);
-        int n_rows   = PQntuples(res);
-
         char** names  = new char*[n_fields];
         char** values = new char*[n_fields];
 

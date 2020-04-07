@@ -643,7 +643,7 @@ int LogDB::purge_log()
     oss << "  SELECT MIN(i.log_index) FROM ("
         << "    SELECT log_index FROM logdb WHERE fed_index = " << UINT64_MAX
         << "      AND applied = '1' AND log_index >= 0 "
-        << "      ORDER BY log_index DESC LIMIT " << db->get_limit_string(to_string(log_retention))
+        << "      ORDER BY log_index DESC " << db->limit_string(log_retention)
         << "  ) AS i";
 
     cb_min_idx.set_callback(&min_idx);
@@ -658,9 +658,9 @@ int LogDB::purge_log()
     oss << "DELETE FROM logdb WHERE applied = '1' AND log_index >= 0 "
         << "AND fed_index = " << UINT64_MAX << " AND log_index < " << min_idx;
 
-    if ( db->limit_support() )
+    if ( db->supports(SqlDB::SqlFeature::LIMIT) )
     {
-        oss << " LIMIT " << db->get_limit_string(to_string(limit_purge));
+        oss << " " << db->limit_string(limit_purge);
     }
 
     if ( db->exec_wr(oss, &cb) != -1 )
@@ -706,7 +706,7 @@ int LogDB::purge_log()
     oss << "  SELECT MIN(i.log_index) FROM ("
         << "    SELECT log_index FROM logdb WHERE fed_index != " << UINT64_MAX
         << "      AND applied = '1' AND log_index >= 0 "
-        << "      ORDER BY log_index DESC LIMIT " << db->get_limit_string(to_string(log_retention))
+        << "      ORDER BY log_index DESC " << db->limit_string(log_retention)
         << "  ) AS i";
 
     cb_min_idx.set_callback(&min_idx);
@@ -721,9 +721,9 @@ int LogDB::purge_log()
     oss << "DELETE FROM logdb WHERE applied = '1' AND log_index >= 0 "
         << "AND fed_index != " << UINT64_MAX << " AND log_index < " << min_idx;
 
-    if ( db->limit_support() )
+    if ( db->supports(SqlDB::SqlFeature::LIMIT) )
     {
-        oss << " LIMIT " << db->get_limit_string(to_string(limit_purge));
+        oss << " " << db->limit_string(limit_purge);
     }
 
     if ( db->exec_wr(oss, &cb) != -1 )

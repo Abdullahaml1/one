@@ -230,8 +230,7 @@ int VirtualMachinePool::get_running(
        << " state = " << VirtualMachine::ACTIVE
        << " and ( lcm_state = " << VirtualMachine::RUNNING
        << " or lcm_state = " << VirtualMachine::UNKNOWN << " )"
-       << " ORDER BY last_poll ASC LIMIT " 
-       << db->get_limit_string(to_string(vm_limit));
+       << " ORDER BY last_poll ASC " << db->limit_string(vm_limit);
 
     where = os.str();
 
@@ -718,7 +717,7 @@ int VirtualMachinePool::calculate_showback(
 
     // Write to DB
 
-    if (db->multiple_values_support())
+    if (db->supports(SqlDB::SqlFeature::MULTIPLE_VALUE))
     {
         oss.str("");
 
